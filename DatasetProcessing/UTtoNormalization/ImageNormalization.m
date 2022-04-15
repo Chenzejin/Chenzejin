@@ -1,0 +1,35 @@
+function [NormImg, hrnew, gcnew, gcold] = ImageNormalization(Cparams_path, img_path, head_center, gaze_point, hR, fx, fy, u, v)
+Cparams = importdata(Cparams_path);
+cparams = Cparams.data;
+inputImg = imread(img_path);
+R7 = cparams(3,1);R8 = cparams(3,2);R9 = cparams(3,3);T3 = cparams(3,4);
+R1 = (cparams(1,1)-u*R7)/fx;R2 = (cparams(1,2)-u*R8)/fx;R3 = (cparams(1,3)-u*R9)/fx;T1 = (cparams(1,4)-u*T3)/fx;
+R4 = (cparams(2,1)-v*R7)/fy;R5 = (cparams(2,2)-v*R8)/fy;R6 = (cparams(2,3)-v*R9)/fy;T2 = (cparams(2,4)-v*T3)/fy;
+R = [R1 R2 R3;R4 R5 R6;R7 R8 R9];
+T = [T1 T2 T3];
+cameraMatrix = [fx,0,u;0,fy,v;0,0,1];
+head_center = (R*head_center'+T')';%把第一相机坐标系（即世界坐标系）的坐标变换到其他相机坐标系
+gc_point = (R*gaze_point'+T')';
+gcold = gc_point-head_center;
+hR = R*hR;
+focal_new=960;
+distance_new=600;
+roiSize = [224 36];
+distance = norm(head_center);
+z_scale = distance_new/distance;
+cam_new = [focal_new, 0, roiSize(1)/2; 0.0, focal_new, roiSize(2)/2; 0, 0, 1.0];
+scaleMat = [1.0, 0.0, 0.0; 0.0, 1.0, 0.0; 0.0, 0.0, z_scale];
+hRx = hR(:,1);
+forward = (head_center'/distance);
+down = cross(forward, hRx);
+down = down / norm(down);
+right1 = cross(down, forward);
+right1 = right1 / norm(right1);
+rotMat = [right1, down, forward]';
+warpMat = (cam_new* scaleMat) * (rotMat * inv(cameraMatrix) );
+NormImg = cv.warpPerspective(inputImg, warpMat, 'DSize', roiSize);     
+cnvMat = scaleMat * rotMat;
+hRnew = cnvMat * hR;
+hrnew = rodrigues(hRnew);
+gcnew = cnvMat * gcold';
+gcnew = gcnew/norm(gcnew);
